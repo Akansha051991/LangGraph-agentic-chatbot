@@ -41,13 +41,17 @@ llm = ChatGroq(
 def youtube_search(query: str):
     """Searches YouTube and returns a clean list of full URLs."""
     from langchain_community.tools import YouTubeSearchTool
+    # Logic: "query, number" limits the results. 
+    # Here we limit it to 2 results.
+    limit_query = f"{query}, 2"
     # This runs the search and gives us the raw list as a string
-    raw = YouTubeSearchTool().run(query)
+    raw = YouTubeSearchTool().run(limit_query)
     
-    # Simple trick: the tool returns strings like "['/watch?v=123']"
- # Change the return line to this:
+    # Convert relative paths to full URLs
     clean_list = raw.replace("'/watch?v=", "'https://www.youtube.com/watch?v=")
-    return clean_list.replace("', '", "'\n\n'") # Adds double newlines between links
+    
+    # Return with clean formatting
+    return clean_list.replace("', '", "'\n\n'")
 # 2. TOOLS SETUP
 search_tool = TavilySearchResults(max_results=2)
 wiki_api = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)
