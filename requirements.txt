@@ -7,5 +7,5 @@ langchain-core
 tavily-python
 wikipedia
 pyowm
-youtube-search-python
+youtube-search
 python-dotenv
