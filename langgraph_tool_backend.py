@@ -26,12 +26,21 @@ load_dotenv()
 # 1. INITIALIZE CLOUD LLM (Groq)
 # We use llama-3.1-8b-instant for the highest free-tier rate limits
 # This checks Streamlit Cloud Secrets FIRST, then falls back to your local .env
-groq_api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+# langgraph_tool_backend.py
+import streamlit as st
+import os
+from langchain_groq import ChatGroq
+
+# Safer way to grab the key from either Streamlit Cloud or Local .env
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    st.error("Missing GROQ_API_KEY. Please set it in Streamlit Secrets or .env file.")
 
 llm = ChatGroq(
     model="llama-3.1-8b-instant", 
     temperature=0,
-    api_key=groq_api_key  # Use the variable we just defined
+    api_key=GROQ_API_KEY  # Explicitly pass the variable here
 )
 
 # 2. TOOLS SETUP
