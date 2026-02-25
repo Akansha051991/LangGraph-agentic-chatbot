@@ -9,10 +9,10 @@ from langgraph.graph import StateGraph, START
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.messages import BaseMessage
-from langchain_core.messages import SystemMessage
+# ADDED: AIMessage and trim_messages to imports
+from langchain_core.messages import BaseMessage, SystemMessage, AIMessage, trim_messages
 
-# Cloud LLM: Groq (Replacement for Ollama)
+# Cloud LLM: Groq
 from langchain_groq import ChatGroq
 
 # Tools
@@ -24,14 +24,6 @@ from langchain_community.tools.openweathermap import OpenWeatherMapQueryRun
 load_dotenv()
 
 # 1. INITIALIZE CLOUD LLM (Groq)
-# We use llama-3.1-8b-instant for the highest free-tier rate limits
-# This checks Streamlit Cloud Secrets FIRST, then falls back to your local .env
-# langgraph_tool_backend.py
-import streamlit as st
-import os
-from langchain_groq import ChatGroq
-
-# Safer way to grab the key from either Streamlit Cloud or Local .env
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
@@ -39,67 +31,75 @@ if not GROQ_API_KEY:
 
 llm = ChatGroq(
     model="llama-3.1-8b-instant", 
+    api_key=GROQ_API_KEY,
     temperature=0,
-    api_key=GROQ_API_KEY  # Explicitly pass the variable here
+    max_retries=2,
+    timeout=60
 )
 
 # 2. TOOLS SETUP
-# -------------------
 search_tool = TavilySearchResults(max_results=2)
-
 wiki_api = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)
 wiki_tool = WikipediaQueryRun(api_wrapper=wiki_api)
-
 weather_api = OpenWeatherMapAPIWrapper()
 weather_tool = OpenWeatherMapQueryRun(api_wrapper=weather_api)
-
-# Scraper-based YouTube tool (No API Key needed)
 youtube_tool = YouTubeSearchTool()
 
 tools = [search_tool, wiki_tool, weather_tool, youtube_tool]
-
-# Bind tools to Groq
 llm_with_tools = llm.bind_tools(tools)
 
 # 3. STATE DEFINITION
-# -------------------
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
-# 4. NODES
-from langchain_core.messages import SystemMessage
-
+# 4. NODES (Corrected with Trimming and Error Handling)
+# ------------------------------------------------------
 def chat_node(state: ChatState):
-    """Processes chat and triggers tools if needed."""
+    """Processes chat with context window protection."""
     messages = state["messages"]
     
-    # Updated Instruction: Be helpful and share results, don't be a critic!
+    # 1. Trim messages to avoid Groq Rate/Token limits (TPM)
+    # We use len as a simple counter; 5000 chars is roughly 1000-1200 tokens
+    trimmed_messages = trim_messages(
+        messages,
+        max_tokens=5000,
+        strategy="last",
+        token_counter=len, 
+        include_system=True,
+    )
+
+    # 2. Personality & Strict URL Rules
     system_instruction = SystemMessage(content=(
         "You are a helpful research assistant. When a user asks for videos or searches: "
         "1. Execute the tool. "
         "2. Directly provide the titles and URLs found. "
-        "3. Do not complain about 'lack of specifications' if the user only asked to find videos. "
-        "4. Only use URLs exactly as provided by the tools."
+        "3. Provide YouTube links as [Title](URL). "
+        "4. Do not complain about lack of specs; just share what the tool found. "
+        "5. ONLY use URLs exactly as provided by the tools. Do not invent links."
     ))
     
-    messages_with_instruction = [system_instruction] + messages
-    response = llm_with_tools.invoke(messages_with_instruction)
+    messages_with_instruction = [system_instruction] + trimmed_messages
     
-    return {"messages": [response]}
+    try:
+        # 3. Invoke the model
+        response = llm_with_tools.invoke(messages_with_instruction)
+        return {"messages": [response]}
+    except Exception as e:
+        # 4. Catch Groq API Status Errors gracefully
+        error_msg = f"⚠️ Groq API Error: {str(e)}"
+        return {"messages": [AIMessage(content=error_msg)]}
 
 tool_node = ToolNode(tools)
 
 # 5. PERSISTENCE (SQLite)
 @st.cache_resource
 def get_checkpointer():
-    """Shared database connection for message history."""
     conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
     return SqliteSaver(conn=conn)
 
 checkpointer = get_checkpointer()
 
 # 6. GRAPH CONSTRUCTION
-# -------------------
 graph = StateGraph(ChatState)
 graph.add_node("chat_node", chat_node)
 graph.add_node("tools", tool_node)
@@ -111,7 +111,6 @@ graph.add_edge("tools", "chat_node")
 chatbot = graph.compile(checkpointer=checkpointer)
 
 # 7. SIDEBAR HELPER
-# -------------------
 def retrieve_all_threads():
     all_threads = set()
     try:
