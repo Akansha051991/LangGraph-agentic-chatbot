@@ -71,20 +71,18 @@ from langchain_core.messages import SystemMessage
 
 def chat_node(state: ChatState):
     """Processes chat and triggers tools if needed."""
-    # 1. Grab current messages from state
     messages = state["messages"]
     
-    # 2. Define the strict rule
+    # Updated Instruction: Be helpful and share results, don't be a critic!
     system_instruction = SystemMessage(content=(
-        "You are a precise assistant. When using tools, ONLY provide the URLs "
-        "exactly as they appear in the tool output. Never generate random or fake URLs. "
-        "If the tool returns fewer results than requested, do not invent extra ones."
+        "You are a helpful research assistant. When a user asks for videos or searches: "
+        "1. Execute the tool. "
+        "2. Directly provide the titles and URLs found. "
+        "3. Do not complain about 'lack of specifications' if the user only asked to find videos. "
+        "4. Only use URLs exactly as provided by the tools."
     ))
     
-    # 3. Prepend the instruction so the AI sees it first
     messages_with_instruction = [system_instruction] + messages
-    
-    # 4. Invoke the LLM with the new list
     response = llm_with_tools.invoke(messages_with_instruction)
     
     return {"messages": [response]}
