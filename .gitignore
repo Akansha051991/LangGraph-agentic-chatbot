@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+.vscode/
+*.db
+*.db-shm
+*.db-wal
+
+# Exclude experimental/draft files
+backend_v2
+backend_v2.ipynb
