@@ -2,11 +2,12 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://langgraph-agentic-chatbot.streamlit.app/)
 <img width="933" height="484" alt="image" src="https://github.com/user-attachments/assets/08662858-700d-4c75-9126-6f2d3ec3f006" />
 
+
 This project demonstrates a production-ready approach to building agentic workflows with persistent memory and real-time tool integration.
-A high-performance Agentic Assistant built with LangGraph and Groq, optimized for sub-second multi-step reasoning loops.
-Features a robust multi-tool suite—including YouTube, Tavily Search, Wikipedia, and Weather—orchestrated with persistent SQLite memory.
+A high-performance Agentic Assistant built with **LangGraph** and **Groq**, optimized for sub-second multi-step reasoning loops.
+Features a robust multi-tool suite—including **YouTube**, **Tavily Search**, **Wikipedia**, and **Weather—orchestrated** with persistent SQLite memory.
 Designed for production-ready observability using LangSmith and a real-time streaming interface via Streamlit.
----
+
 
 ## 🌟 Key Features
 
