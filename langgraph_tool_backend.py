@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.tools import tool
 from dotenv import load_dotenv
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -21,7 +21,7 @@ llm = ChatOpenAI()
 # 2. Tools
 # -------------------
 # Tools
-search_tool = DuckDuckGoSearchRun(region="us-en")
+search_tool = TavilySearchResults(max_results=2)
 @tool
 def calculator(first_num: float, second_num: float, operation: str) -> dict:
     """
@@ -106,13 +106,15 @@ graph.add_edge(START, "chat_node")
 
 graph.add_conditional_edges("chat_node", tools_condition)
 graph.add_edge("tools", "chat_node")
-chatbot = graph.compile()
-chatbot
 chatbot = graph.compile(checkpointer=checkpointer)
 # 7. Helper
 # -------------------
 def retrieve_all_threads():
     all_threads = set()
-    for checkpoint in checkpointer.list(None):
-        all_threads.add(checkpoint.config["configurable"]["thread_id"])
+    # Ensure we handle empty databases gracefully
+    try:
+        for checkpoint in checkpointer.list(None):
+            all_threads.add(checkpoint.config["configurable"]["thread_id"])
+    except Exception:
+        return []
     return list(all_threads)

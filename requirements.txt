@@ -1,10 +1,10 @@
 streamlit
 langgraph>=0.2.0
-langgraph-checkpoint-sqlite
+langgraph-checkpoint-sqlite>=3.0.1
 langchain
 langchain-openai
 langchain-community
 langchain-core
-duckduckgo-search
+langchain-tavily
 requests
 python-dotenv

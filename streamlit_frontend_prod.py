@@ -1,6 +1,6 @@
 import streamlit as st
 from langgraph_tool_backend import chatbot, retrieve_all_threads
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage # Added ToolMessage here
 import uuid
 
 # **************************************** Page Config & Styling **********************
@@ -99,11 +99,7 @@ with st.sidebar:
 
             st.session_state['message_history'] = temp_messages
             st.rerun()
-
 # **************************************** Main UI ************************************
-
-# **************************************** Main UI ************************************
-
 st.title("Chat Interface")
 st.info(f"Currently viewing Thread: **{st.session_state['thread_id']}**", icon="🆔")
 
@@ -128,34 +124,35 @@ if user_input:
             def ai_only_stream():
                 has_started_typing = False
                 
-                # We use stream_mode="messages" to see every step of the graph
                 for message_chunk, metadata in chatbot.stream(
                     {"messages": [HumanMessage(content=user_input)]},
                     config=CONFIG,
                     stream_mode="messages"
                 ):
-                    # 1. Handle Tool Calls (The Agent deciding to use a tool)
+                    # 1. Tool Calls
                     if isinstance(message_chunk, AIMessage) and message_chunk.tool_calls:
                         for tool_call in message_chunk.tool_calls:
                             status_container.update(label=f"Using tool: **{tool_call['name']}**", state="running")
-                            status_container.write(f"⚙️ Action: `{tool_call['name']}` with args: `{tool_call['args']}`")
+                            status_container.write(f"⚙️ Action: `{tool_call['name']}`")
                     
-                    # 2. Handle Tool Outputs (The result coming back from the tool)
-                    # This tells the user what the tool actually found!
-                    from langchain_core.messages import ToolMessage
+                    # 2. Tool Outputs
                     if isinstance(message_chunk, ToolMessage):
                         status_container.write(f"✅ Tool Result: `{str(message_chunk.content)[:100]}...`")
 
-                    # 3. Handle Final Text Content
+                    # 3. Final Text
                     if isinstance(message_chunk, AIMessage) and message_chunk.content:
                         if not has_started_typing:
                             status_container.update(label="✅ Response ready", state="complete", expanded=False)
                             has_started_typing = True
                         yield message_chunk.content
 
-            # Capture the full response to save to history
             full_response = st.write_stream(ai_only_stream)
 
-    # Save to history and refresh
+    # Save to history
     st.session_state['message_history'].append({'role': 'assistant', 'content': full_response})
+    
+    # Force a sync so the sidebar history updates immediately
+    if st.session_state['thread_id'] not in st.session_state['chat_threads']:
+        st.session_state['chat_threads'].insert(0, st.session_state['thread_id'])
+        
     st.rerun()
