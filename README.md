@@ -1,4 +1,7 @@
 # 🤖 LangGraph Agentic Chatbot with SQL Persistence
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://langgraph-agentic-chatbot.streamlit.app/)
+<img width="933" height="484" alt="image" src="https://github.com/user-attachments/assets/08662858-700d-4c75-9126-6f2d3ec3f006" />
+
 
 An advanced AI Assistant architecture that leverages **LangGraph** for complex state management, **Streamlit** for a modern UI, and **LangSmith** for full-cycle observability. 
 
