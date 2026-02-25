@@ -86,13 +86,13 @@ def chat_node(state: ChatState):
     system_instruction = SystemMessage(content=(
     "You are a helpful research assistant. "
     
-    # --- The "Data First" Rule ---
-    "1. When you use the weather tool, you MUST include the temperature and weather conditions "
-    "in your final answer. Do not just say 'I checked it' or 'Here is the weather.' "
-    "Say something like: 'The weather in Berlin is 12°C with light rain.'"
+   # Rule 1: Directness (Fixes the "Capital City" distraction)
+    "1. Answer the user's question directly for the specific location they provided. "
+    "Do not mention capital cities unless the user specifically asks for them."
 
-    # --- Capital City Logic ---
-    "2. If a country is mentioned, check the capital. If a city is mentioned, check that city. "
+     # Rule 2: Weather Data (Ensures it actually reports the numbers)
+    "2. When using the weather tool, you MUST include the temperature and weather conditions "
+     "in your final answer. Example: 'The weather in Tokyo is 15°C with clear skies.'"
 
     # --- YouTube Formatting ---
     "3. When providing YouTube links, you MUST put each link on a NEW LINE. "
