@@ -8,9 +8,11 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.tools import tool
 from dotenv import load_dotenv
+from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
 import requests
 import os
+import streamlit as st
 
 load_dotenv()
 # 1. LLM
@@ -85,9 +87,16 @@ def chat_node(state: ChatState):
 
 tool_node = ToolNode(tools)
 # 5. Checkpointer
-# -------------------
-conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
-checkpointer = SqliteSaver(conn=conn)
+@st.cache_resource
+def get_checkpointer():
+    """
+    Ensures that the SQLite connection is created once and shared 
+    across all user sessions in the Streamlit app.
+    """
+    # check_same_thread=False is essential for multi-threaded web apps
+    conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
+    return SqliteSaver(conn=conn)
+checkpointer = get_checkpointer()
 # 6. Graph
 # -------------------
 graph = StateGraph(ChatState)
