@@ -10,6 +10,7 @@ from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import BaseMessage
+from langchain_core.messages import SystemMessage
 
 # Cloud LLM: Groq (Replacement for Ollama)
 from langchain_groq import ChatGroq
@@ -57,11 +58,26 @@ class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 # 4. NODES
-# -------------------
+from langchain_core.messages import SystemMessage
+
 def chat_node(state: ChatState):
     """Processes chat and triggers tools if needed."""
+    # 1. Grab current messages from state
     messages = state["messages"]
-    response = llm_with_tools.invoke(messages)
+    
+    # 2. Define the strict rule
+    system_instruction = SystemMessage(content=(
+        "You are a precise assistant. When using tools, ONLY provide the URLs "
+        "exactly as they appear in the tool output. Never generate random or fake URLs. "
+        "If the tool returns fewer results than requested, do not invent extra ones."
+    ))
+    
+    # 3. Prepend the instruction so the AI sees it first
+    messages_with_instruction = [system_instruction] + messages
+    
+    # 4. Invoke the LLM with the new list
+    response = llm_with_tools.invoke(messages_with_instruction)
+    
     return {"messages": [response]}
 
 tool_node = ToolNode(tools)
