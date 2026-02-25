@@ -3,6 +3,7 @@ from langgraph_tool_backend import chatbot, retrieve_all_threads
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 import uuid
 import datetime
+import re
 
 # **************************************** Page Config & Styling **********************
 st.set_page_config(page_title="LangGraph Agent", page_icon="🤖", layout="wide")
@@ -61,7 +62,10 @@ def get_thread_label(thread_id):
         # Look for the first human message to use as a title
         first_user_msg = next((m.content for m in messages if isinstance(m, HumanMessage)), None)
         if first_user_msg:
-            return (first_user_msg[:20] + '...') if len(first_user_msg) > 20 else first_user_msg
+            words = first_user_msg.split()
+            # Takes first 4 words and capitalizes them
+            title = " ".join(words[:4]).title()
+            return f"{title}..." if len(words) > 4 else title
     return f"New Chat {str(thread_id)[:5]}"
 
 # **************************************** Session Setup ******************************
@@ -74,7 +78,7 @@ if 'thread_id' not in st.session_state:
 if 'chat_threads' not in st.session_state:
     raw_threads = retrieve_all_threads()
     # If database is empty, start with current thread
-    st.session_state['chat_threads'] = raw_threads[::-1] if raw_threads else []
+    st.session_state['chat_threads'] = raw_threads if raw_threads else []
 
 add_thread(st.session_state['thread_id'])
 
@@ -88,6 +92,16 @@ with st.sidebar:
     if st.button('➕ Start New Chat', use_container_width=True, type="primary"):
         reset_chat()
         st.rerun()
+        # --- ADDED: Clear History Button ---
+    if st.button('🗑️ Clear All History', use_container_width=True):
+        from langgraph_tool_backend import clear_all_history
+        if clear_all_history():
+            st.session_state['chat_threads'] = []
+            st.session_state['message_history'] = []
+            # Generate a fresh thread ID so we aren't on a deleted one
+            st.session_state['thread_id'] = str(uuid.uuid4()) 
+            st.toast("Database Wiped Clean!")
+            st.rerun()
 
     st.divider()
     st.subheader('📜 History')
@@ -143,10 +157,13 @@ if user_input:
                 has_started_typing = False
                 
                 for message_chunk, metadata in chatbot.stream(
-                    {"messages": [HumanMessage(content=user_input)]},
-                    config=CONFIG,
-                    stream_mode="messages"
-                ):
+                {"messages": [HumanMessage(content=user_input)]},
+                config={
+                    "configurable": {"thread_id": st.session_state['thread_id']},
+                    "recursion_limit": 10  # This kills the loop after 10 steps
+                }, 
+                stream_mode="messages",
+):
                     # 1. Tool Calls
                     if isinstance(message_chunk, AIMessage) and message_chunk.tool_calls:
                         for tool_call in message_chunk.tool_calls:
@@ -165,7 +182,13 @@ if user_input:
                         yield message_chunk.content
 
             full_response = st.write_stream(ai_only_stream)
-
+# Check for YouTube links to embed
+        yt_pattern = r'(https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+|https?://youtu\.be/[\w-]+)'
+        yt_links = re.findall(yt_pattern, full_response)
+    
+        if yt_links:
+            for link in yt_links:
+                st.video(link) # This puts the actual video player in the chat
     # Save to history
     st.session_state['message_history'].append({'role': 'assistant', 'content': full_response})
     

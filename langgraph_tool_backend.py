@@ -16,6 +16,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, AIMessage, trim_
 from langchain_groq import ChatGroq
 
 # Tools
+from langchain_core.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.tools import WikipediaQueryRun, YouTubeSearchTool
 from langchain_community.utilities import WikipediaAPIWrapper, OpenWeatherMapAPIWrapper
@@ -36,16 +37,26 @@ llm = ChatGroq(
     max_retries=2,
     timeout=60
 )
-
+@tool
+def youtube_search(query: str):
+    """Searches YouTube and returns a clean list of full URLs."""
+    from langchain_community.tools import YouTubeSearchTool
+    # This runs the search and gives us the raw list as a string
+    raw = YouTubeSearchTool().run(query)
+    
+    # Simple trick: the tool returns strings like "['/watch?v=123']"
+ # Change the return line to this:
+    clean_list = raw.replace("'/watch?v=", "'https://www.youtube.com/watch?v=")
+    return clean_list.replace("', '", "'\n\n'") # Adds double newlines between links
 # 2. TOOLS SETUP
 search_tool = TavilySearchResults(max_results=2)
 wiki_api = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)
 wiki_tool = WikipediaQueryRun(api_wrapper=wiki_api)
 weather_api = OpenWeatherMapAPIWrapper()
 weather_tool = OpenWeatherMapQueryRun(api_wrapper=weather_api)
-youtube_tool = YouTubeSearchTool()
 
-tools = [search_tool, wiki_tool, weather_tool, youtube_tool]
+
+tools = [search_tool, wiki_tool, weather_tool, youtube_search] 
 llm_with_tools = llm.bind_tools(tools)
 
 # 3. STATE DEFINITION
@@ -59,7 +70,6 @@ def chat_node(state: ChatState):
     messages = state["messages"]
     
     # 1. Trim messages to avoid Groq Rate/Token limits (TPM)
-    # We use len as a simple counter; 5000 chars is roughly 1000-1200 tokens
     trimmed_messages = trim_messages(
         messages,
         max_tokens=5000,
@@ -68,16 +78,23 @@ def chat_node(state: ChatState):
         include_system=True,
     )
 
-    # 2. Personality & Strict URL Rules
+    # 2. Personality & Strict URL Rules 
     system_instruction = SystemMessage(content=(
-        "You are a helpful research assistant. When a user asks for videos or searches: "
-        "1. Execute the tool. "
-        "2. Directly provide the titles and URLs found. "
-        "3. Provide YouTube links as [Title](URL). "
-        "4. Do not complain about lack of specs; just share what the tool found. "
-        "5. ONLY use URLs exactly as provided by the tools. Do not invent links."
-    ))
+    "You are a helpful research assistant. "
     
+    # --- The "Data First" Rule ---
+    "1. When you use the weather tool, you MUST include the temperature and weather conditions "
+    "in your final answer. Do not just say 'I checked it' or 'Here is the weather.' "
+    "Say something like: 'The weather in Berlin is 12°C with light rain.'"
+
+    # --- Capital City Logic ---
+    "2. If a country is mentioned, check the capital. If a city is mentioned, check that city. "
+
+    # --- YouTube Formatting ---
+    "3. When providing YouTube links, you MUST put each link on a NEW LINE. "
+    "Format them as a bulleted list: * [Video Title](URL)"
+))
+    # Align this exactly with the system_instruction above
     messages_with_instruction = [system_instruction] + trimmed_messages
     
     try:
@@ -112,10 +129,38 @@ chatbot = graph.compile(checkpointer=checkpointer)
 
 # 7. SIDEBAR HELPER
 def retrieve_all_threads():
-    all_threads = set()
+    unique_threads = []
     try:
+        # LangGraph's checkpointer.list() returns checkpoints 
+        # from newest to oldest by default.
         for checkpoint in checkpointer.list(None):
-            all_threads.add(checkpoint.config["configurable"]["thread_id"])
-    except Exception:
+            t_id = checkpoint.config["configurable"]["thread_id"]
+            
+            # Only add the thread_id if we haven't seen it yet.
+            # This ensures each thread appears only once and 
+            # stays in its 'most recent' position.
+            if t_id not in unique_threads:
+                unique_threads.append(t_id)
+                
+    except Exception as e:
+        print(f"Error retrieving threads: {e}")
         return []
-    return list(all_threads)
+        
+    return unique_threads  # This is now sorted: Newest -> Oldest
+# 8. DATABASE MANAGEMENT
+def clear_all_history():
+    """Wipes the SQLite database to clear all threads."""
+    try:
+        # Use the same database name you used in get_checkpointer()
+        conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
+        cursor = conn.cursor()
+        # These are the standard LangGraph persistence tables
+        cursor.execute("DELETE FROM checkpoints")
+        cursor.execute("DELETE FROM checkpoint_blobs")
+        cursor.execute("DELETE FROM checkpoint_writes")
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error clearing history: {e}")
+        return False
