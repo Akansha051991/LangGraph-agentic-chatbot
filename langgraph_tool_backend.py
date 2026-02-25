@@ -1,117 +1,93 @@
-from langgraph.graph import StateGraph, START, END
-from typing import TypedDict, Annotated
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_core.tools import tool
-from dotenv import load_dotenv
-from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
-import requests
 import os
+import sqlite3
 import streamlit as st
+from dotenv import load_dotenv
+from typing import TypedDict, Annotated
+
+# LangGraph Core
+from langgraph.graph import StateGraph, START
+from langgraph.graph.message import add_messages
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import BaseMessage
+
+# Cloud LLM: Groq (Replacement for Ollama)
+from langchain_groq import ChatGroq
+
+# Tools
+from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_community.tools import WikipediaQueryRun, YouTubeSearchTool
+from langchain_community.utilities import WikipediaAPIWrapper, OpenWeatherMapAPIWrapper
+from langchain_community.tools.openweathermap import OpenWeatherMapQueryRun
 
 load_dotenv()
-# 1. LLM
-# -------------------
-llm = ChatOpenAI()
-# 2. Tools
-# -------------------
-# Tools
-search_tool = TavilySearchResults(max_results=2)
-@tool
-def calculator(first_num: float, second_num: float, operation: str) -> dict:
-    """
-    Perform a basic arithmetic operation on two numbers.
-    Supported operations: add, sub, mul, div
-    """
-    try:
-        if operation == "add":
-            result = first_num + second_num
-        elif operation == "sub":
-            result = first_num - second_num
-        elif operation == "mul":
-            result = first_num * second_num
-        elif operation == "div":
-            if second_num == 0:
-                return {"error": "Division by zero is not allowed"}
-            result = first_num / second_num
-        else:
-            return {"error": f"Unsupported operation '{operation}'"}
-        
-        return {"first_num": first_num, "second_num": second_num, "operation": operation, "result": result}
-    except Exception as e:
-        return {"error": str(e)}
-@tool
-def get_stock_price(symbol: str) -> dict:
-    """
-    Fetch latest stock price for a given symbol (e.g. 'AAPL', 'TSLA').
-    """
-    # Retrieve secrets from .env
-    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
-    base_url = os.getenv("STOCK_PRICE_URL")
-    
-    if not api_key or not base_url:
-        return {"error": "API key or URL not found in environment variables."}
 
-    # Construct parameters separately for cleaner code
-    params = {
-        "function": "GLOBAL_QUOTE",
-        "symbol": symbol,
-        "apikey": api_key
-    }
-    
-    try:
-        r = requests.get(base_url, params=params)
-        r.raise_for_status() # Check for HTTP errors
-        return r.json()
-    except Exception as e:
-        return {"error": str(e)}
-tools = [search_tool, get_stock_price, calculator]
+# 1. INITIALIZE CLOUD LLM (Groq)
+# We use llama-3.1-8b-instant for the highest free-tier rate limits
+llm = ChatGroq(
+    model="llama-3.1-8b-instant", 
+    temperature=0,
+    api_key=os.getenv("GROQ_API_KEY")
+)
+
+# 2. TOOLS SETUP
+# -------------------
+search_tool = TavilySearchResults(max_results=2)
+
+wiki_api = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)
+wiki_tool = WikipediaQueryRun(api_wrapper=wiki_api)
+
+weather_api = OpenWeatherMapAPIWrapper()
+weather_tool = OpenWeatherMapQueryRun(api_wrapper=weather_api)
+
+# Scraper-based YouTube tool (No API Key needed)
+youtube_tool = YouTubeSearchTool()
+
+tools = [search_tool, wiki_tool, weather_tool, youtube_tool]
+
+# Bind tools to Groq
 llm_with_tools = llm.bind_tools(tools)
-# 3. State
+
+# 3. STATE DEFINITION
 # -------------------
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
-    # 4. Nodes
+# 4. NODES
 # -------------------
 def chat_node(state: ChatState):
-    """LLM node that may answer or request a tool call."""
+    """Processes chat and triggers tools if needed."""
     messages = state["messages"]
     response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
 
 tool_node = ToolNode(tools)
-# 5. Checkpointer
+
+# 5. PERSISTENCE (SQLite)
 @st.cache_resource
 def get_checkpointer():
-    """
-    Ensures that the SQLite connection is created once and shared 
-    across all user sessions in the Streamlit app.
-    """
-    # check_same_thread=False is essential for multi-threaded web apps
+    """Shared database connection for message history."""
     conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
     return SqliteSaver(conn=conn)
+
 checkpointer = get_checkpointer()
-# 6. Graph
+
+# 6. GRAPH CONSTRUCTION
 # -------------------
 graph = StateGraph(ChatState)
 graph.add_node("chat_node", chat_node)
 graph.add_node("tools", tool_node)
-graph.add_edge(START, "chat_node")
 
+graph.add_edge(START, "chat_node")
 graph.add_conditional_edges("chat_node", tools_condition)
 graph.add_edge("tools", "chat_node")
+
 chatbot = graph.compile(checkpointer=checkpointer)
-# 7. Helper
+
+# 7. SIDEBAR HELPER
 # -------------------
 def retrieve_all_threads():
     all_threads = set()
-    # Ensure we handle empty databases gracefully
     try:
         for checkpoint in checkpointer.list(None):
             all_threads.add(checkpoint.config["configurable"]["thread_id"])

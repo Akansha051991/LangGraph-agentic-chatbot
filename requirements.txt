@@ -1,10 +1,11 @@
 streamlit
 langgraph>=0.2.0
-langgraph-checkpoint-sqlite>=3.0.1
-langchain
-langchain-openai
+langgraph-checkpoint-sqlite
+langchain-groq
 langchain-community
 langchain-core
-langchain-tavily
-requests
+tavily-python
+wikipedia
+pyowm
+youtube-search-python
 python-dotenv
