@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import uuid
 import streamlit as st
 from dotenv import load_dotenv
 from typing import TypedDict, Annotated
@@ -19,7 +20,6 @@ from langchain_core.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper, OpenWeatherMapAPIWrapper
-from langchain_community.tools.openweathermap import OpenWeatherMapQueryRun
 
 load_dotenv()
 
@@ -34,34 +34,33 @@ llm = ChatGroq(
     timeout=60
 )
 
+# 2. TOOLS SETUP
 @tool
 def youtube_search(query: str):
-    """Searches YouTube and returns a clean list of full URLs."""
+    """Search YouTube. Input: search query string. Returns video URLs."""
     from langchain_community.tools import YouTubeSearchTool
     limit_query = f"{query}, 2"
     raw = YouTubeSearchTool().run(limit_query)
     clean_list = raw.replace("'/watch?v=", "'https://www.youtube.com/watch?v=")
     return clean_list.replace("', '", "'\n\n'")
 
-# 2. TOOLS SETUP (With Crash Protection for Weather)
+@tool
+def get_weather(location: str):
+    """Get current weather for a location. Input: 'City, Country' string."""
+    try:
+        weather_api = OpenWeatherMapAPIWrapper()
+        return weather_api.run(location)
+    except Exception:
+        return f"Could not find weather for '{location}'. Please try a different city name."
+
 search_tool = TavilySearchResults(max_results=2)
 wiki_api = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)
 wiki_tool = WikipediaQueryRun(api_wrapper=wiki_api)
 
-# Weather Protection Wrapper
-@tool
-def get_weather(location: str):
-    """Use this tool to get current weather for a specific city or location."""
-    try:
-        weather_api = OpenWeatherMapAPIWrapper()
-        return weather_api.run(location)
-    except Exception as e:
-        # Catching the pyowm NotFoundError gracefully
-        return f"Could not find weather for '{location}'. Please check the city name."
-
-# Update tools list to use the 'get_weather' wrapper
 tools = [search_tool, wiki_tool, get_weather, youtube_search] 
-llm_with_tools = llm.bind_tools(tools)
+
+# bind_tools with tool_choice="auto" helps Groq parse function calls better
+llm_with_tools = llm.bind_tools(tools, tool_choice="auto")
 
 # 3. STATE DEFINITION
 class ChatState(TypedDict):
@@ -78,13 +77,13 @@ def chat_node(state: ChatState):
         include_system=True,
     )
     system_instruction = SystemMessage(content=(
-        "You are a helpful research assistant. "
-        "1. Answer the user's question directly. "
-        "2. TOOL USAGE RULES: "
-        "   - ONLY use the weather tool if the user explicitly asks about weather or temperatures. "
-        "   - DO NOT provide weather for locations mentioned in general research unless asked. "
-        "3. YouTube: Put each link on a NEW LINE as a bulleted list: * [Title](URL)"
-    ))
+    "You are a helpful research assistant. "
+    "1. Answer the user's question directly and concisely. "
+    "2. If a tool returns an error or no results, do not keep retrying the same tool. "
+    "   Explain the situation to the user instead. "
+    "3. Once you have enough information to answer, STOP calling tools and provide the final response. "
+    "4. YouTube links: * [Title](URL) on new lines."
+))
     messages_with_instruction = [system_instruction] + trimmed_messages
     try:
         response = llm_with_tools.invoke(messages_with_instruction)
@@ -129,17 +128,22 @@ def clear_all_history():
     try:
         conn = sqlite3.connect(database="chatbot.db", timeout=10)
         cursor = conn.cursor()
+        
+        # 1. Get all table names
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = [row[0] for row in cursor.fetchall()]
         
+        # 2. Clear checkpoint/write tables
         for table in tables:
             if table.startswith("checkpoint") or table == "writes":
                 cursor.execute(f"DELETE FROM {table}")
         
         conn.commit()
         conn.close()
+        
+        # 3. Reset the cache
         get_checkpointer.clear() 
         return True
     except Exception as e:
         st.error(f"Database Error: {e}")
-        return False # <-- FIX: Removed the trailing 'check' word here
+        return False

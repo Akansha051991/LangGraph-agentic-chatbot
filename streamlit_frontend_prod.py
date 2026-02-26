@@ -25,7 +25,6 @@ st.markdown("""
         border-radius: 15px;
         border: 1px solid #f0f2f6;
     }
-    /* Styles the session caption */
     .session-info {
         font-size: 0.8rem;
         color: #6b7280;
@@ -57,15 +56,16 @@ def load_conversation(thread_id):
 
 def get_thread_label(thread_id):
     """Generates a human-readable label for the sidebar buttons."""
-    messages = load_conversation(thread_id)
-    if messages:
-        # Look for the first human message to use as a title
-        first_user_msg = next((m.content for m in messages if isinstance(m, HumanMessage)), None)
-        if first_user_msg:
-            words = first_user_msg.split()
-            # Takes first 4 words and capitalizes them
-            title = " ".join(words[:4]).title()
-            return f"{title}..." if len(words) > 4 else title
+    try:
+        messages = load_conversation(thread_id)
+        if messages:
+            first_user_msg = next((m.content for m in messages if isinstance(m, HumanMessage)), None)
+            if first_user_msg:
+                words = str(first_user_msg).split()
+                title = " ".join(words[:4]).title()
+                return f"{title}..." if len(words) > 4 else title
+    except Exception:
+        pass
     return f"New Chat {str(thread_id)[:5]}"
 
 # **************************************** Session Setup ******************************
@@ -77,9 +77,9 @@ if 'thread_id' not in st.session_state:
 
 if 'chat_threads' not in st.session_state:
     raw_threads = retrieve_all_threads()
-    # If database is empty, start with current thread
     st.session_state['chat_threads'] = raw_threads if raw_threads else []
 
+# Ensure the current active thread is in the sidebar list
 add_thread(st.session_state['thread_id'])
 
 # **************************************** Sidebar UI *********************************
@@ -93,57 +93,44 @@ with st.sidebar:
         reset_chat()
         st.rerun()
 
-    # CLEAR ALL HISTORY BUTTON (The Fixed Part)
+    # CLEAR ALL HISTORY BUTTON
     if st.button('🗑️ Clear All History', use_container_width=True):
         from langgraph_tool_backend import clear_all_history
-        
-        # Execute the database wipe
         if clear_all_history():
-            # Force reset the UI state variables
             st.session_state['chat_threads'] = []
             st.session_state['message_history'] = []
-            st.session_state['thread_id'] = str(uuid.uuid4()) 
-            
+            st.session_state['thread_id'] = generate_thread_id()
             st.toast("Database Wiped Clean!", icon="🔥")
-            # Rerun so the 'History' section below updates immediately
             st.rerun()
         else:
-            st.error("Failed to clear database. Check your console/logs.")
+            st.error("Failed to clear database.")
 
     st.divider()
     st.subheader('📜 History')
     
-    # Loop through conversation threads with Smart Labels
     for thread_id in st.session_state.get('chat_threads', []):
         is_active = thread_id == st.session_state['thread_id']
         btn_type = "primary" if is_active else "secondary"
-        
-        # Use our helper function for the label
         label = get_thread_label(thread_id)
         
-        if st.button(f"💬 {label}", key=f"btn_{thread_id}", 
-                     use_container_width=True, type=btn_type):
+        if st.button(f"💬 {label}", key=f"btn_{thread_id}", use_container_width=True, type=btn_type):
             st.session_state['thread_id'] = thread_id
             messages = load_conversation(thread_id)
-            
             temp_messages = []
             for msg in messages:
                 if isinstance(msg, (HumanMessage, AIMessage)):
                     role = 'user' if isinstance(msg, HumanMessage) else 'assistant'
                     temp_messages.append({'role': role, 'content': msg.content})
-
             st.session_state['message_history'] = temp_messages
             st.rerun()
 
 # **************************************** Main UI ************************************
 st.title("Chat Interface")
 
-# Cleaner Session ID display
 st.markdown(f"<div class='session-info'>🧵 Session: <code>{st.session_state['thread_id']}</code></div>", unsafe_allow_html=True)
 
-# Display conversation history
 for message in st.session_state['message_history']:
-    if message['content']: # Only display if there is text content
+    if message['content']:
         with st.chat_message(message['role']):
             st.markdown(message['content'])
 
@@ -155,27 +142,25 @@ if user_input:
     with st.chat_message('user'):
         st.markdown(user_input)
 
-    CONFIG = {'configurable': {'thread_id': st.session_state['thread_id']}}
-    
     with st.chat_message("assistant"):
         with st.status("🔍 Thinking...", expanded=True) as status_container:
             
             def ai_only_stream():
                 has_started_typing = False
-                
+                # --- CHANGE: Increased recursion_limit to 25 to prevent RecursionError ---
                 for message_chunk, metadata in chatbot.stream(
-                {"messages": [HumanMessage(content=user_input)]},
-                config={
-                    "configurable": {"thread_id": st.session_state['thread_id']},
-                    "recursion_limit": 10  # This kills the loop after 10 steps
-                }, 
-                stream_mode="messages",
-):
+                    {"messages": [HumanMessage(content=user_input)]},
+                    config={
+                        "configurable": {"thread_id": st.session_state['thread_id']},
+                        "recursion_limit": 25  
+                    }, 
+                    stream_mode="messages",
+                ):
                     # 1. Tool Calls
                     if isinstance(message_chunk, AIMessage) and message_chunk.tool_calls:
                         for tool_call in message_chunk.tool_calls:
                             status_container.update(label=f"Running Tool: **{tool_call['name']}**", state="running")
-                            status_container.write(f"⚙️ Calling: `{tool_call['name']}`with args: `{tool_call['args']}`")
+                            status_container.write(f"⚙️ Calling: `{tool_call['name']}`")
                     
                     # 2. Tool Outputs
                     if isinstance(message_chunk, ToolMessage):
@@ -189,17 +174,18 @@ if user_input:
                         yield message_chunk.content
 
             full_response = st.write_stream(ai_only_stream)
-# Check for YouTube links to embed
+
+        # Check for YouTube links to embed
         yt_pattern = r'(https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+|https?://youtu\.be/[\w-]+)'
         yt_links = re.findall(yt_pattern, full_response)
-    
         if yt_links:
             for link in yt_links:
-                st.video(link) # This puts the actual video player in the chat
+                st.video(link)
+
     # Save to history
     st.session_state['message_history'].append({'role': 'assistant', 'content': full_response})
     
-    # Ensure current thread is in the history list
+    # Update sidebar threads list
     if st.session_state['thread_id'] not in st.session_state['chat_threads']:
         st.session_state['chat_threads'].insert(0, st.session_state['thread_id'])
         
