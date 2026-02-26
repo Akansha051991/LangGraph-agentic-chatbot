@@ -75,8 +75,9 @@ def chat_node(state: ChatState):
         "   - ONLY use the weather tool if the user explicitly asks about weather, "
         "     forecasts, or current temperatures."
         "   - DO NOT provide weather information for locations mentioned in general "
-         "     research (like Kansas or Indiana) unless weather was part of the query."
-        "3. Format YouTube links as bulleted lists: * [Title](URL) on new lines."
+         "    research (like Kansas or Indiana) unless weather was part of the query."
+        "3.   When providing YouTube links, you MUST put each link on a NEW LINE. "
+        "     Format YouTube links as bulleted lists: * [Title](URL) on new lines."
     ))
     messages_with_instruction = [system_instruction] + trimmed_messages
     try:
