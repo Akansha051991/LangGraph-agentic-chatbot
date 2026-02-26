@@ -86,28 +86,35 @@ add_thread(st.session_state['thread_id'])
 
 with st.sidebar:
     st.title("🤖 AI Assistant")
-    # Locate this in your Sidebar UI section
     st.caption("Powered by LangGraph & Groq (Llama 3.1)")
     
+    # NEW CHAT BUTTON
     if st.button('➕ Start New Chat', use_container_width=True, type="primary"):
         reset_chat()
         st.rerun()
-        # --- ADDED: Clear History Button ---
+
+    # CLEAR ALL HISTORY BUTTON (The Fixed Part)
     if st.button('🗑️ Clear All History', use_container_width=True):
         from langgraph_tool_backend import clear_all_history
+        
+        # Execute the database wipe
         if clear_all_history():
+            # Force reset the UI state variables
             st.session_state['chat_threads'] = []
             st.session_state['message_history'] = []
-            # Generate a fresh thread ID so we aren't on a deleted one
             st.session_state['thread_id'] = str(uuid.uuid4()) 
-            st.toast("Database Wiped Clean!")
+            
+            st.toast("Database Wiped Clean!", icon="🔥")
+            # Rerun so the 'History' section below updates immediately
             st.rerun()
+        else:
+            st.error("Failed to clear database. Check your console/logs.")
 
     st.divider()
     st.subheader('📜 History')
     
     # Loop through conversation threads with Smart Labels
-    for thread_id in st.session_state['chat_threads']:
+    for thread_id in st.session_state.get('chat_threads', []):
         is_active = thread_id == st.session_state['thread_id']
         btn_type = "primary" if is_active else "secondary"
         
