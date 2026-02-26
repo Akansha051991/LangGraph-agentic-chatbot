@@ -69,8 +69,13 @@ def chat_node(state: ChatState):
     )
     system_instruction = SystemMessage(content=(
         "You are a helpful research assistant. "
-        "1. Answer the user's question directly for the specific location provided. "
-        "2. Include temperature and conditions for weather. "
+        "1. Answer the user's question directly. "
+    
+        "2. TOOL USAGE RULES:"
+        "   - ONLY use the weather tool if the user explicitly asks about weather, "
+        "     forecasts, or current temperatures."
+        "   - DO NOT provide weather information for locations mentioned in general "
+         "     research (like Kansas or Indiana) unless weather was part of the query."
         "3. Format YouTube links as bulleted lists: * [Title](URL) on new lines."
     ))
     messages_with_instruction = [system_instruction] + trimmed_messages
