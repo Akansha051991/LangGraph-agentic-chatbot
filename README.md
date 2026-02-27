@@ -81,6 +81,13 @@ https://eu.smith.langchain.com/
 
 
 ## 🔍 Architecture & Observability
-By using LangGraph, the agent can loop back and correct itself if a tool call fails. Every "thought" and "action" is logged via LangSmith, providing full transparency into the LLM's reasoning process, token usage, and latency.# LangGraph-agentic-chatbot
+By using LangGraph, the agent operates as a state machine. If a tool call fails or returns ambiguous data, the agent can loop back, refine its search, and correct itself.
+Every "thought" and "action" is logged via LangSmith, providing full transparency into:
+* `LLM Reasoning:` Exactly why the agent chose a specific tool.
+* `Token Usage:` Monitoring costs and efficiency.
+* `Latency:` Identifying bottlenecks in tool response times.
 
-A brief description of what this project does and who it's for.
+## 📖 Technical Evolution (Dev Log)
+For a deep dive into the technical hurdles, "Overwhelming" moments, and the upcoming MCP (Model Context Protocol) upgrade, check out the:
+
+👉 [View the Developer Log (DEV_LOG.md)](./DEV_LOG.md)
