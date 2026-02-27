@@ -8,6 +8,12 @@ A high-performance Agentic Assistant built with **LangGraph** and **Groq**, opti
 Features a robust multi-tool suite—including **YouTube**, **Tavily Search**, **Wikipedia**, and **Weather—orchestrated** with persistent SQLite memory.
 Designed for production-ready observability using LangSmith and a real-time streaming interface via Streamlit.
 
+## 🚀 Evolution of the Project
+
+1. **Phase 1: The Core** - Built the basic backend and integrated the Llama-3.1-8B model via Groq.
+2. **Phase 2: The Experience** - Added Streamlit for real-time streaming and a polished UI.
+3. **Phase 3: Memory & Logic** - Implemented SQLite persistence for resumable chats and complex LangGraph state management.
+4. **Phase 4: Professional Grade** - Integrated LangSmith for observability and parallel tool-calling.
 
 ## 🌟 Key Features
 
